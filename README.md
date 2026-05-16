@@ -1,18 +1,61 @@
-# holy-linux
+# Holy-Linux
 
-`holy-linux` is a minimal bootable `x86_64` Linux image for QEMU that uses a real HolyC toolchain and real `.hc` source files in userspace.
+`Holy-Linux` is a small bootable `x86_64` Linux system for QEMU that uses real HolyC source files in userspace.
 
-What it does:
+This repo exists because I wanted a minimal system that actually boots, drops into its own shell, and runs programs written as `.hc` files, without pretending that C is HolyC and without stopping at pseudocode.
 
-- boots a Linux kernel with a generated initramfs
-- does not ship BusyBox in guest userspace
-- runs `holyinit` as `PID 1`
-- launches `holysh`, a simple custom HolyC shell
-- provides `holybox`, a custom HolyC multicall command binary
+It also exists for a practical reason: I do not consider it rational to fully learn HolyC for one short experimental project. So I built it with `Codex` as an engineering assistant, while keeping the result honest, inspectable, and reproducible.
+
+> "An idiot admires complexity, a genius admires simplicity."  
+> Terry A. Davis
+
+That line fits the goal here. `Holy-Linux` is not trying to recreate all of TempleOS. It is trying to do one thing cleanly: boot Linux, enter a custom HolyC userspace, and compile and run `.hc` code inside the guest.
+
+## What It Is
+
+- A real Linux kernel booted by `QEMU`
+- A generated `initramfs`
+- A custom HolyC `init`: `holyinit`
+- A custom HolyC shell: `holysh`
+- A custom HolyC multicall binary: `holybox`
+- A guest-side `hcc` setup so `.hc` programs can be compiled inside the running VM
+
+## What It Is Not
+
+- It is not TempleOS
+- It is not original native TempleOS userspace compatibility
+- It is not a full Linux distribution
+- It is not a fake demo with renamed C files
+
+## Project Layout
+
+```text
+holy-linux/
+  build.sh
+  run.sh
+  clean.sh
+  README.md
+  kernel/
+  rootfs/
+    init
+    bin/
+  src/
+    holy/
+      holyinit.hc
+      holysh.hc
+      holybox.hc
+      hcc.hc
+      hello.hc
+      echo.hc
+      cat.hc
+      clear.hc
+  toolchain/
+  scripts/
+```
 
 ## Dependencies
 
-Host tools required:
+Host tools:
 
 - `bash`
 - `git`
@@ -26,10 +69,10 @@ Host tools required:
 - `ldd`
 - `qemu-system-x86_64`
 
-The build downloads:
+The build fetches:
 
-- `holyc-lang` from GitHub at pinned commit `3e1d278d7ee41350d64999332b2a6a9b14fd3573` dated `2026-05-16`
-- Alpine Linux `vmlinuz-virt` from `v3.22.4`
+- `holyc-lang` at pinned commit `3e1d278d7ee41350d64999332b2a6a9b14fd3573`
+- Alpine `vmlinuz-virt` `3.22.4`
 
 ## Commands
 
@@ -51,70 +94,54 @@ Clean:
 ./clean.sh
 ```
 
-## Layout
+## How It Works
 
-```text
-holy-linux/
-  build.sh
-  run.sh
-  clean.sh
-  README.md
-  kernel/
-  rootfs/
-    init
-    bin/
-  src/
-    holy/
-      holyinit.hc
-      holysh.hc
-      holybox.hc
-  toolchain/
-  scripts/
-```
+`build.sh`:
 
-## How it works
-
-`build.sh` does the following:
-
-1. clones `holyc-lang` into `toolchain/holyc-lang`
-2. builds and installs `hcc` plus `libtos` into `toolchain/prefix`
-3. downloads a prebuilt `x86_64` Linux kernel into `kernel/vmlinuz-virt`
-4. compiles the HolyC sources in `src/holy/*.hc`
-5. creates `/init -> /bin/holyinit` and the `holybox` applet symlinks
-6. copies the dynamic loader and shared libraries needed by the HolyC ELF binaries into the initramfs root
-7. stages a minimal guest-side HolyC toolchain so `hcc` also works inside the VM
-8. packs `build/initramfs.cpio.gz`
+1. Clones `holyc-lang` into `toolchain/holyc-lang`
+2. Builds and installs `hcc` and `libtos` into `toolchain/prefix`
+3. Downloads a bootable `x86_64` Linux kernel
+4. Compiles the HolyC sources in `src/holy/*.hc`
+5. Builds the rootfs and wires `/init` to `holyinit`
+6. Installs `holybox` applet links
+7. Stages the runtime pieces needed by HolyC ELF binaries
+8. Stages a minimal guest-side compile toolchain for in-VM `hcc`
+9. Packs `build/initramfs.cpio.gz`
 
 `run.sh` starts:
 
 ```bash
-qemu-system-x86_64 -kernel kernel/vmlinuz-virt -initrd build/initramfs.cpio.gz -append "console=ttyS0 rdinit=/init" -nographic
+qemu-system-x86_64 \
+  -kernel kernel/vmlinuz-virt \
+  -initrd build/initramfs.cpio.gz \
+  -append "console=ttyS0 rdinit=/init" \
+  -nographic \
+  -serial mon:stdio \
+  -m 1024M
 ```
 
-## What is real HolyC here
+## What Is Real HolyC Here
 
-The init process, shell, and command box are real `.hc` files compiled by a real existing HolyC compiler: `hcc` from `holyc-lang`.
+The important parts are real `.hc` files:
 
-This repository does not invent a new language and does not rename C files to `.hc`.
+- `holyinit.hc`
+- `holysh.hc`
+- `holybox.hc`
+- `hcc.hc`
+- `hello.hc`
+- `echo.hc`
+- `cat.hc`
+- `clear.hc`
 
-## Toolchain limits
+They are compiled by a real existing HolyC compiler: `hcc` from `holyc-lang`.
 
-This is not full TempleOS userspace compatibility.
+No fake syntax layer was invented for this repo.
 
-Important limitations:
-
-- `holyc-lang` is a Linux-hosted HolyC compiler, not the original TempleOS compiler
-- the generated HolyC binaries here are dynamically linked against the host glibc runtime, so the build copies `ld-linux`, `libc`, and `libm` into the initramfs
-- the in-guest `hcc` also needs staged `clang`, `ld`, GCC CRT objects, and runtime libs, which makes the initramfs much larger
-- `holysh` is intentionally simple and only supports whitespace tokenization, not full POSIX shell syntax
-- `holybox` is intentionally small and only implements a compact set of applets
-- this repo avoids BusyBox in guest userspace, but still relies on Linux libc/syscall ABI through `holyc-lang`
-
-## What actually works
+## What Actually Works
 
 After boot, the system reaches `holysh`.
 
-From the QEMU console you should be able to run:
+Inside QEMU, the following flow works:
 
 ```text
 help
@@ -133,4 +160,43 @@ hcc /src/hello.hc -o /tmp/hello
 exit
 ```
 
-`holyinit`, `holysh`, and `holybox` are compiled from the `.hc` files in [src/holy](/home/brody/holy-linux/src/holy).
+The guest-compiled program prints:
+
+```text
+hello from guest-compiled HolyC
+```
+
+## Toolchain Limits
+
+This project is honest about its compromises.
+
+- `holyc-lang` is a Linux-hosted HolyC compiler, not the original TempleOS compiler
+- The produced binaries use the Linux libc/syscall ABI
+- The guest-side `hcc` needs staged `clang`, `ld`, GCC CRT objects, and runtime libraries
+- Because of that, the `initramfs` is much larger than a tiny toy boot image
+- `holysh` is intentionally simple: whitespace tokenization only, no pipes, no redirects, no full POSIX parsing
+- `holybox` is intentionally small and only covers a compact command set
+
+## Why Codex Is Mentioned
+
+This project was built with `Codex` because the goal was to ship a working system, not to roleplay a purist learning exercise.
+
+I did not want to spend disproportionate time learning HolyC deeply for a single experiment when the real task was systems integration:
+
+- find a working HolyC compiler on Linux
+- wire it into a bootable image
+- make `.hc` userspace binaries actually run
+- get in-guest compilation working too
+
+`Codex` helped accelerate the plumbing. The result is still a normal repository with normal scripts, normal source files, and a reproducible build.
+
+## Bottom Line
+
+If you run:
+
+```bash
+./build.sh
+./run.sh
+```
+
+you get a bootable Linux guest that enters a custom HolyC shell and can run, and compile, real `.hc` programs.
