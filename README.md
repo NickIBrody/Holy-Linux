@@ -4,8 +4,11 @@
 [![Platform](https://img.shields.io/badge/platform-x86__64-blue)](https://github.com/NickIBrody/Holy-Linux)
 [![Userspace](https://img.shields.io/badge/userspace-HolyC-gold)](https://github.com/NickIBrody/Holy-Linux/tree/main/src/holy)
 [![Runtime](https://img.shields.io/badge/runtime-QEMU%20%2B%20Linux-black)](https://www.qemu.org/)
+[![Kernel](https://img.shields.io/badge/kernel-kernel.org%206.12.89--holy-darkgreen)](https://kernel.org/)
 
 `Holy-Linux` is a small bootable `x86_64` Linux system for QEMU that uses real HolyC source files in userspace.
+
+It now boots on its own `kernel.org`-built `x86_64` kernel with a custom `-holy` localversion, so it no longer depends on a prebuilt Alpine kernel image.
 
 This repo exists because I wanted a minimal system that actually boots, drops into its own shell, and runs programs written as `.hc` files, without pretending that C is HolyC and without stopping at pseudocode.
 
@@ -18,8 +21,9 @@ That line fits the goal here. `Holy-Linux` is not trying to recreate all of Temp
 
 ## What It Is
 
-- A real Linux kernel booted by `QEMU`
+- A real Linux kernel built from `kernel.org` sources and booted by `QEMU`
 - A generated `initramfs`
+- A bootable UEFI `img`
 - A custom HolyC `init`: `holyinit`
 - A custom HolyC shell: `holysh`
 - A custom HolyC multicall binary: `holybox`
@@ -77,7 +81,7 @@ Host tools:
 The build fetches:
 
 - `holyc-lang` at pinned commit `3e1d278d7ee41350d64999332b2a6a9b14fd3573`
-- Alpine `vmlinuz-virt` `3.22.4`
+- Linux `6.12.89` from `kernel.org`
 
 ## Commands
 
@@ -93,6 +97,12 @@ Run:
 ./run.sh
 ```
 
+Run UEFI disk image:
+
+```bash
+./run-img.sh
+```
+
 Clean:
 
 ```bash
@@ -105,24 +115,38 @@ Clean:
 
 1. Clones `holyc-lang` into `toolchain/holyc-lang`
 2. Builds and installs `hcc` and `libtos` into `toolchain/prefix`
-3. Downloads a bootable `x86_64` Linux kernel
-4. Compiles the HolyC sources in `src/holy/*.hc`
-5. Builds the rootfs and wires `/init` to `holyinit`
-6. Installs `holybox` applet links
-7. Stages the runtime pieces needed by HolyC ELF binaries
-8. Stages a minimal guest-side compile toolchain for in-VM `hcc`
-9. Packs `build/initramfs.cpio.gz`
+3. Downloads Linux `6.12.89` from `kernel.org`
+4. Builds a custom `x86_64` kernel with localversion `-holy`
+5. Compiles the HolyC sources in `src/holy/*.hc`
+6. Builds the rootfs and wires `/init` to `holyinit`
+7. Installs `holybox` applet links
+8. Stages the runtime pieces needed by HolyC ELF binaries
+9. Stages a minimal guest-side compile toolchain for in-VM `hcc`
+10. Packs `build/initramfs.cpio.gz`
+11. Builds `build/holy-linux.img`
 
 `run.sh` starts:
 
 ```bash
 qemu-system-x86_64 \
-  -kernel kernel/vmlinuz-virt \
+  -kernel kernel/bzImage \
   -initrd build/initramfs.cpio.gz \
   -append "console=ttyS0 rdinit=/init" \
   -nographic \
   -serial mon:stdio \
-  -m 1024M
+  -m 2048M
+```
+
+`run-img.sh` starts the UEFI image with:
+
+```bash
+qemu-system-x86_64 \
+  -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+  -drive if=pflash,format=raw,file=build/OVMF_VARS_4M.fd \
+  -drive file=build/holy-linux.img,format=raw,if=virtio \
+  -nographic \
+  -serial mon:stdio \
+  -m 2048M
 ```
 
 ## What Is Real HolyC Here
@@ -171,6 +195,13 @@ The guest-compiled program prints:
 hello from guest-compiled HolyC
 ```
 
+The branded kernel identity is now visible too:
+
+```text
+uname -a
+Linux holy-linux 6.12.89-holy ... x86_64
+```
+
 ## Toolchain Limits
 
 This project is honest about its compromises.
@@ -179,6 +210,7 @@ This project is honest about its compromises.
 - The produced binaries use the Linux libc/syscall ABI
 - The guest-side `hcc` needs staged `clang`, `ld`, GCC CRT objects, and runtime libraries
 - Because of that, the `initramfs` is much larger than a tiny toy boot image
+- The current `initramfs` is heavy enough that `QEMU` should be given `2048M` of RAM for reliable boot
 - `holysh` is intentionally simple: whitespace tokenization only, no pipes, no redirects, no full POSIX parsing
 - `holybox` is intentionally small and only covers a compact command set
 

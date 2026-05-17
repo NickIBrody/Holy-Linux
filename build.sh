@@ -4,19 +4,26 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$ROOT_DIR/build"
 DISTFILES_DIR="$BUILD_DIR/distfiles"
+WORK_DIR="$BUILD_DIR/work"
 ROOTFS_DIR="$BUILD_DIR/rootfs"
 TOOLCHAIN_SRC_DIR="$ROOT_DIR/toolchain/holyc-lang"
 TOOLCHAIN_PREFIX="$ROOT_DIR/toolchain/prefix"
 KERNEL_DIR="$ROOT_DIR/kernel"
-KERNEL_IMAGE="$KERNEL_DIR/vmlinuz-virt"
+KERNEL_IMAGE="$KERNEL_DIR/bzImage"
+KERNEL_CONFIG_FRAGMENT="$KERNEL_DIR/x86_64_holy.fragment"
+KERNEL_CONFIG_SNAPSHOT="$KERNEL_DIR/x86_64_holy.config"
 INITRAMFS_IMAGE="$BUILD_DIR/initramfs.cpio.gz"
 DISK_IMAGE="$BUILD_DIR/holy-linux.img"
 
 HOLYC_REPO="https://github.com/Jamesbarford/holyc-lang.git"
 HOLYC_COMMIT="3e1d278d7ee41350d64999332b2a6a9b14fd3573"
-ALPINE_KERNEL_SERIES="3.22"
-ALPINE_KERNEL_VERSION="3.22.4"
-ALPINE_KERNEL_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_KERNEL_SERIES}/releases/x86_64/netboot-${ALPINE_KERNEL_VERSION}/vmlinuz-virt"
+LINUX_VERSION="6.12.89"
+LINUX_SERIES="v6.x"
+LINUX_TARBALL="linux-$LINUX_VERSION.tar.xz"
+LINUX_URL="https://cdn.kernel.org/pub/linux/kernel/${LINUX_SERIES}/${LINUX_TARBALL}"
+LINUX_SRC_DIR="$WORK_DIR/linux-$LINUX_VERSION"
+LINUX_BUILD_DIR="$WORK_DIR/linux-build"
+KERNEL_MAKE_JOBS="${KERNEL_MAKE_JOBS:-$(nproc)}"
 
 need_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -56,9 +63,36 @@ prepare_toolchain() {
   make -C "$TOOLCHAIN_SRC_DIR" install INSTALL_PREFIX="$TOOLCHAIN_PREFIX"
 }
 
-prepare_kernel() {
-  mkdir -p "$KERNEL_DIR"
-  fetch "$ALPINE_KERNEL_URL" "$KERNEL_IMAGE"
+prepare_kernel_source() {
+  local tarball_path="$DISTFILES_DIR/$LINUX_TARBALL"
+
+  mkdir -p "$WORK_DIR" "$KERNEL_DIR"
+  fetch "$LINUX_URL" "$tarball_path"
+
+  if [[ ! -d "$LINUX_SRC_DIR" ]]; then
+    printf '[kernel] extract %s\n' "$LINUX_TARBALL"
+    tar -C "$WORK_DIR" -xf "$tarball_path"
+  fi
+}
+
+build_kernel() {
+  printf '[kernel] configure linux-%s\n' "$LINUX_VERSION"
+  rm -rf "$LINUX_BUILD_DIR"
+  mkdir -p "$LINUX_BUILD_DIR"
+
+  make -C "$LINUX_SRC_DIR" O="$LINUX_BUILD_DIR" tinyconfig >/dev/null
+  "$LINUX_SRC_DIR/scripts/kconfig/merge_config.sh" \
+    -m \
+    -O "$LINUX_BUILD_DIR" \
+    "$LINUX_BUILD_DIR/.config" \
+    "$KERNEL_CONFIG_FRAGMENT" >/dev/null
+  make -C "$LINUX_SRC_DIR" O="$LINUX_BUILD_DIR" olddefconfig >/dev/null
+
+  printf '[kernel] build bzImage\n'
+  make -C "$LINUX_SRC_DIR" O="$LINUX_BUILD_DIR" -j"$KERNEL_MAKE_JOBS" bzImage >/dev/null
+
+  cp "$LINUX_BUILD_DIR/arch/x86/boot/bzImage" "$KERNEL_IMAGE"
+  cp "$LINUX_BUILD_DIR/.config" "$KERNEL_CONFIG_SNAPSHOT"
 }
 
 prepare_rootfs() {
@@ -69,6 +103,9 @@ prepare_rootfs() {
   cp -a "$ROOT_DIR/rootfs/." "$ROOTFS_DIR/"
   mkdir -p "$ROOTFS_DIR"/{bin,dev,proc,sys,tmp,etc,root,usr/bin}
   chmod 1777 "$ROOTFS_DIR/tmp"
+  mknod -m 600 "$ROOTFS_DIR/dev/console" c 5 1 2>/dev/null || true
+  mknod -m 666 "$ROOTFS_DIR/dev/null" c 1 3 2>/dev/null || true
+  mknod -m 666 "$ROOTFS_DIR/dev/tty" c 5 0 2>/dev/null || true
 }
 
 build_holy_binaries() {
@@ -206,8 +243,8 @@ set timeout=0
 set default=0
 
 menuentry "Holy-Linux" {
-  search --file --set=root /boot/vmlinuz-virt
-  linux /boot/vmlinuz-virt console=ttyS0 rdinit=/init
+  search --file --set=root /boot/bzImage
+  linux /boot/bzImage console=ttyS0 rdinit=/init
   initrd /boot/initramfs.cpio.gz
 }
 EOF
@@ -224,7 +261,7 @@ EOF
   mmd -i "$DISK_IMAGE" ::/EFI/BOOT
   mmd -i "$DISK_IMAGE" ::/boot
   mcopy -i "$DISK_IMAGE" "$efi_bin" ::/EFI/BOOT/BOOTX64.EFI
-  mcopy -i "$DISK_IMAGE" "$KERNEL_IMAGE" ::/boot/vmlinuz-virt
+  mcopy -i "$DISK_IMAGE" "$KERNEL_IMAGE" ::/boot/bzImage
   mcopy -i "$DISK_IMAGE" "$INITRAMFS_IMAGE" ::/boot/initramfs.cpio.gz
 }
 
@@ -237,6 +274,7 @@ main() {
   need_cmd cpio
   need_cmd gzip
   need_cmd tar
+  need_cmd xz
   need_cmd ldd
   need_cmd file
   need_cmd grub-mkstandalone
@@ -244,11 +282,16 @@ main() {
   need_cmd mformat
   need_cmd mmd
   need_cmd mcopy
+  need_cmd bc
+  need_cmd flex
+  need_cmd bison
+  need_cmd perl
 
   mkdir -p "$BUILD_DIR" "$DISTFILES_DIR"
 
   prepare_toolchain
-  prepare_kernel
+  prepare_kernel_source
+  build_kernel
   prepare_rootfs
   build_holy_binaries
   install_guest_toolchain
@@ -258,6 +301,7 @@ main() {
 
   printf '\nready:\n'
   printf '  kernel:    %s\n' "$KERNEL_IMAGE"
+  printf '  config:    %s\n' "$KERNEL_CONFIG_SNAPSHOT"
   printf '  initramfs: %s\n' "$INITRAMFS_IMAGE"
   printf '  img:       %s\n' "$DISK_IMAGE"
 }

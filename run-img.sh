@@ -27,4 +27,4 @@ exec qemu-system-x86_64 \
   -drive file="$DISK_IMAGE",format=raw,if=virtio \
   -nographic \
   -serial mon:stdio \
-  -m 1024M
+  -m 2048M

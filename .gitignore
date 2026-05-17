@@ -1,4 +1,6 @@
 build/
+kernel/bzImage
+kernel/x86_64_holy.config
 toolchain/holyc-lang/
 toolchain/prefix/
 toolchain/holyc-lang/build/
