@@ -36,8 +36,6 @@ That line fits the goal here. `Holy-Linux` is not trying to recreate all of Temp
 - It is not a full Linux distribution
 - It is not a fake demo with renamed C files
 
-```
-
 ## Dependencies
 
 Host tools:
