@@ -36,30 +36,6 @@ That line fits the goal here. `Holy-Linux` is not trying to recreate all of Temp
 - It is not a full Linux distribution
 - It is not a fake demo with renamed C files
 
-## Project Layout
-
-```text
-holy-linux/
-  build.sh
-  run.sh
-  clean.sh
-  README.md
-  kernel/
-  rootfs/
-    init
-    bin/
-  src/
-    holy/
-      holyinit.hc
-      holysh.hc
-      holybox.hc
-      hcc.hc
-      hello.hc
-      echo.hc
-      cat.hc
-      clear.hc
-  toolchain/
-  scripts/
 ```
 
 ## Dependencies
