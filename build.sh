@@ -10,6 +10,7 @@ TOOLCHAIN_PREFIX="$ROOT_DIR/toolchain/prefix"
 KERNEL_DIR="$ROOT_DIR/kernel"
 KERNEL_IMAGE="$KERNEL_DIR/vmlinuz-virt"
 INITRAMFS_IMAGE="$BUILD_DIR/initramfs.cpio.gz"
+DISK_IMAGE="$BUILD_DIR/holy-linux.img"
 
 HOLYC_REPO="https://github.com/Jamesbarford/holyc-lang.git"
 HOLYC_COMMIT="3e1d278d7ee41350d64999332b2a6a9b14fd3573"
@@ -188,6 +189,45 @@ pack_initramfs() {
   )
 }
 
+build_disk_image() {
+  local efi_dir="$BUILD_DIR/efi"
+  local grub_cfg="$efi_dir/grub.cfg"
+  local efi_bin="$efi_dir/BOOTX64.EFI"
+
+  printf '[img] build %s\n' "$DISK_IMAGE"
+  rm -rf "$efi_dir"
+  mkdir -p "$efi_dir"
+
+  cat > "$grub_cfg" <<'EOF'
+serial --unit=0 --speed=115200
+terminal_input console
+terminal_output serial console
+set timeout=0
+set default=0
+
+menuentry "Holy-Linux" {
+  search --file --set=root /boot/vmlinuz-virt
+  linux /boot/vmlinuz-virt console=ttyS0 rdinit=/init
+  initrd /boot/initramfs.cpio.gz
+}
+EOF
+
+  grub-mkstandalone \
+    -O x86_64-efi \
+    -o "$efi_bin" \
+    --modules="part_gpt part_msdos fat ext2 normal linux search search_fs_file serial terminal" \
+    "boot/grub/grub.cfg=$grub_cfg"
+
+  dd if=/dev/zero of="$DISK_IMAGE" bs=1M count=128 status=none
+  mformat -i "$DISK_IMAGE" -F -v HOLYLINUX ::
+  mmd -i "$DISK_IMAGE" ::/EFI
+  mmd -i "$DISK_IMAGE" ::/EFI/BOOT
+  mmd -i "$DISK_IMAGE" ::/boot
+  mcopy -i "$DISK_IMAGE" "$efi_bin" ::/EFI/BOOT/BOOTX64.EFI
+  mcopy -i "$DISK_IMAGE" "$KERNEL_IMAGE" ::/boot/vmlinuz-virt
+  mcopy -i "$DISK_IMAGE" "$INITRAMFS_IMAGE" ::/boot/initramfs.cpio.gz
+}
+
 main() {
   need_cmd git
   need_cmd curl
@@ -199,6 +239,11 @@ main() {
   need_cmd tar
   need_cmd ldd
   need_cmd file
+  need_cmd grub-mkstandalone
+  need_cmd dd
+  need_cmd mformat
+  need_cmd mmd
+  need_cmd mcopy
 
   mkdir -p "$BUILD_DIR" "$DISTFILES_DIR"
 
@@ -209,10 +254,12 @@ main() {
   install_guest_toolchain
   copy_runtime_libs
   pack_initramfs
+  build_disk_image
 
   printf '\nready:\n'
   printf '  kernel:    %s\n' "$KERNEL_IMAGE"
   printf '  initramfs: %s\n' "$INITRAMFS_IMAGE"
+  printf '  img:       %s\n' "$DISK_IMAGE"
 }
 
 main "$@"
