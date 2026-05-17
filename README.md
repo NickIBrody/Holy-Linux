@@ -1,5 +1,10 @@
 # Holy-Linux
 
+[![Release](https://img.shields.io/github/v/release/NickIBrody/Holy-Linux?display_name=tag)](https://github.com/NickIBrody/Holy-Linux/releases)
+[![Platform](https://img.shields.io/badge/platform-x86__64-blue)](https://github.com/NickIBrody/Holy-Linux)
+[![Userspace](https://img.shields.io/badge/userspace-HolyC-gold)](https://github.com/NickIBrody/Holy-Linux/tree/main/src/holy)
+[![Runtime](https://img.shields.io/badge/runtime-QEMU%20%2B%20Linux-black)](https://www.qemu.org/)
+
 `Holy-Linux` is a small bootable `x86_64` Linux system for QEMU that uses real HolyC source files in userspace.
 
 This repo exists because I wanted a minimal system that actually boots, drops into its own shell, and runs programs written as `.hc` files, without pretending that C is HolyC and without stopping at pseudocode.
