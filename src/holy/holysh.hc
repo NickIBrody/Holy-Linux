@@ -1,7 +1,7 @@
 extern "c" I32 execv(U8 *path, U8 **argv);
 extern "c" U0 *getcwd(U8 *buf, U64 size);
 
-#define HOLYSH_VERSION "holysh 0.2.0"
+#define HOLYSH_VERSION "holysh 0.3.0"
 
 I64 ReadLine(U8 *line, I64 cap)
 {
@@ -52,7 +52,8 @@ I32 ShowHelp()
   PutS("  exit       leave the shell\n");
   PutS("\n");
   PutS("holybox applets:\n");
-  PutS("  hello echo cat clear ls uname reboot poweroff\n");
+  PutS("  hello pwd echo cat read write clear ls htree uname holyfetch\n");
+  PutS("  touch mkdir rm mv cp ps holytop dmesg mount umount hed reboot poweroff\n");
   PutS("\n");
   PutS("notes:\n");
   PutS("  tokenization is whitespace-based\n");
